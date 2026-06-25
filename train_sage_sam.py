@@ -6,6 +6,7 @@ import argparse
 import json
 import logging
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -96,8 +97,88 @@ def setup_logging(run_dir: Path) -> None:
         level=logging.INFO,
         format="[%(asctime)s.%(msecs)03d] %(message)s",
         datefmt="%H:%M:%S",
-        handlers=[logging.FileHandler(run_dir / "run.log", encoding="utf-8"), logging.StreamHandler()],
+        handlers=[logging.FileHandler(run_dir / "run.log", encoding="utf-8")],
         force=True,
+    )
+
+
+class TerminalProgress:
+    def __init__(self, stream=None):
+        self.stream = stream or sys.stdout
+        self.last_len = 0
+
+    def update(self, message: str) -> None:
+        padding = max(self.last_len - len(message), 0)
+        self.stream.write("\r" + message + (" " * padding))
+        self.stream.flush()
+        self.last_len = len(message)
+
+    def write(self, message: str = "") -> None:
+        if self.last_len:
+            self.stream.write("\r" + (" " * self.last_len) + "\r")
+            self.last_len = 0
+        if message:
+            self.stream.write(message + "\n")
+        else:
+            self.stream.write("\n")
+        self.stream.flush()
+
+
+def format_seconds(seconds: float) -> str:
+    seconds = max(int(seconds), 0)
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours:d}h{minutes:02d}m{seconds:02d}s"
+    if minutes:
+        return f"{minutes:d}m{seconds:02d}s"
+    return f"{seconds:d}s"
+
+
+def progress_bar(completed: int, total: int, width: int = 28) -> str:
+    total = max(total, 1)
+    filled = min(width, max(0, round(width * completed / total)))
+    return "[" + ("#" * filled) + ("-" * (width - filled)) + "]"
+
+
+def format_metric(value, digits: int = 4) -> str:
+    if value is None:
+        return "n/a"
+    return f"{float(value):.{digits}f}"
+
+
+def format_progress_status(
+    record: dict,
+    iteration: int,
+    start_iteration: int,
+    max_iterations: int,
+    start_time: float,
+    best_metric: float,
+    last_metrics: dict | None = None,
+    validating: bool = False,
+) -> str:
+    completed = iteration + 1
+    total = max(max_iterations, 1)
+    completed_since_start = iteration - start_iteration + 1
+    elapsed = time.time() - start_time
+    eta = (elapsed / max(completed_since_start, 1)) * max(max_iterations - iteration - 1, 0)
+    percent = 100.0 * completed / total
+    best_text = "n/a" if best_metric == float("-inf") else f"{best_metric:.4f}"
+    val_text = "n/a"
+    iou_text = "n/a"
+    hd95_text = "n/a"
+    if last_metrics:
+        val_text = format_metric(last_metrics.get("fused_avg_dice"))
+        iou_text = format_metric(last_metrics.get("fused_avg_iou"))
+        hd95_text = format_metric(last_metrics.get("fused_avg_hd95"))
+    status = "validating" if validating else record["stage"]
+    return (
+        f"{progress_bar(completed, total)} {iteration + 1}/{max_iterations} {percent:5.1f}% "
+        f"{status} loss={record['loss_total']:.5f} "
+        f"sup={record['loss_sup']:.5f} set={record['loss_set']:.5f} "
+        f"struct={record['loss_structure']:.5f} val_dice={val_text} "
+        f"val_iou={iou_text} val_hd95={hd95_text} best={best_text} "
+        f"eta={format_seconds(eta)}"
     )
 
 
@@ -290,8 +371,12 @@ def main() -> None:
         return
 
     train_logger = JSONLLogger(run_dir / "metrics" / "train.jsonl")
+    progress = TerminalProgress()
+    progress.write(f"Starting training. run_dir={run_dir}")
     supervised_iter = infinite_iterator(loaders["supervised_loader"])
     unlabeled_iter = infinite_iterator(loaders["unlabeled_loader"])
+    train_start_time = time.time()
+    last_metrics = None
     if args.warmup_iterations == 0 and semantic_state is None:
         semantic_state = trainer.calibrate_semantics(loaders["calibration_loader"], 0, args.conformal_alpha, device)
         (run_dir / "calibration" / "semantic_calibration.json").write_text(json.dumps(semantic_state, indent=2), encoding="utf-8")
@@ -333,8 +418,19 @@ def main() -> None:
             "gpu_memory_mb": torch.cuda.max_memory_allocated(device) / (1024 * 1024) if device.type == "cuda" else 0.0,
         }
         train_logger.log(**record)
-        if iteration % args.log_interval == 0:
+        if args.log_interval > 0 and iteration % args.log_interval == 0:
             logging.info("iteration=%d stage=%s loss=%.6f", iteration, stage, record["loss_total"])
+            progress.update(
+                format_progress_status(
+                    record,
+                    iteration,
+                    start_iteration,
+                    args.max_iterations,
+                    train_start_time,
+                    best_metric,
+                    last_metrics,
+                )
+            )
 
         def payload(metric_value: float):
             return checkpoint_manager.build_payload(
@@ -355,6 +451,18 @@ def main() -> None:
             )
 
         if args.validation_interval > 0 and (iteration + 1) % args.validation_interval == 0:
+            progress.update(
+                format_progress_status(
+                    record,
+                    iteration,
+                    start_iteration,
+                    args.max_iterations,
+                    train_start_time,
+                    best_metric,
+                    last_metrics,
+                    validating=True,
+                )
+            )
             metrics = evaluate_multiclass(
                 model,
                 loaders["val_loader"],
@@ -369,9 +477,35 @@ def main() -> None:
             if current > best_metric:
                 best_metric = current
                 checkpoint_manager.save_best(payload(best_metric))
+            logging.info("validation iteration=%d metrics=%s", iteration, json.dumps(metrics, sort_keys=True))
+            last_metrics = metrics
+            progress.update(
+                format_progress_status(
+                    record,
+                    iteration,
+                    start_iteration,
+                    args.max_iterations,
+                    train_start_time,
+                    best_metric,
+                    last_metrics,
+                )
+            )
         if args.checkpoint_interval > 0 and (iteration + 1) % args.checkpoint_interval == 0:
             checkpoint_manager.save_latest(payload(best_metric))
 
+    if "record" in locals():
+        progress.update(
+            format_progress_status(
+                record,
+                args.max_iterations - 1,
+                start_iteration,
+                args.max_iterations,
+                train_start_time,
+                best_metric,
+                last_metrics,
+                validating=True,
+            )
+        )
     final_metrics = evaluate_multiclass(
         model,
         loaders["val_loader"],
@@ -383,6 +517,20 @@ def main() -> None:
         iteration=args.max_iterations,
     )
     best_metric = max(best_metric, float(final_metrics["fused_avg_dice"]))
+    logging.info("final_validation metrics=%s", json.dumps(final_metrics, sort_keys=True))
+    last_metrics = final_metrics
+    if "record" in locals():
+        progress.update(
+            format_progress_status(
+                record,
+                args.max_iterations - 1,
+                start_iteration,
+                args.max_iterations,
+                train_start_time,
+                best_metric,
+                last_metrics,
+            )
+        )
     final_payload = checkpoint_manager.build_payload(
         iteration=args.max_iterations - 1,
         best_metric=best_metric,
@@ -403,6 +551,7 @@ def main() -> None:
     if args.save_final:
         checkpoint_manager.save_final(final_payload)
     logging.info("Training complete. final fused_avg_dice=%.6f", final_metrics["fused_avg_dice"])
+    progress.write(f"Training complete. final fused_avg_dice={final_metrics['fused_avg_dice']:.6f}")
 
 
 if __name__ == "__main__":
