@@ -25,6 +25,9 @@ class StructureCalibration:
     def from_json(cls, path: str | Path) -> "StructureCalibration":
         return cls(**json.loads(Path(path).read_text(encoding="utf-8")))
 
+    def to_dict(self) -> dict:
+        return asdict(self)
+
 
 def _edge_samples(embedding: torch.Tensor, mask: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     emb = F.normalize(embedding.float(), dim=1)
@@ -59,3 +62,30 @@ def calibrate_structure_thresholds(
         tau_same = min(0.99, midpoint + 0.05)
         tau_boundary = max(-0.99, midpoint - 0.05)
     return StructureCalibration(tau_same, tau_boundary, target_precision, int(same_aff.numel()), int(boundary_aff.numel()))
+
+
+@torch.no_grad()
+def calibrate_sam_structure(
+    calibration_loader,
+    structure_cache_reader,
+    num_classes: int,
+    device,
+    target_precision: float,
+    output_path: str | Path,
+) -> StructureCalibration:
+    del num_classes
+    embeddings = []
+    masks = []
+    for batch in calibration_loader:
+        sample_ids = list(batch["sample_id"])
+        embedding = structure_cache_reader.get(sample_ids, device=torch.device(device))
+        mask = batch["mask"].to(device)
+        embeddings.append(embedding.cpu())
+        masks.append(mask.cpu())
+    if not embeddings:
+        raise ValueError("calibration_loader is empty; cannot calibrate SAM structure")
+    state = calibrate_structure_thresholds(torch.cat(embeddings, dim=0), torch.cat(masks, dim=0), target_precision=target_precision)
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    state.to_json(output_path)
+    return state

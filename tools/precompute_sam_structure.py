@@ -3,23 +3,60 @@
 from __future__ import annotations
 
 import argparse
+import json
+from pathlib import Path
 
 import torch
 
 from Model.sam_structure_encoder import SAMStructureEncoder
-from sage_ssl.structure_cache import save_structure_cache, tensor_hash
+from dataloader.builders import SAGEImageDataset, resolve_dataset_root, validate_dataset_layout
+from dataloader.calibration_split import compute_dataset_fingerprint
+from sage_ssl.structure_cache import save_structure_cache, tensor_hash, write_cache_manifest
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", default="structure_cache")
-    parser.add_argument("--sam-checkpoint")
+    parser.add_argument("--data_path", "--data-path", dest="data_path")
+    parser.add_argument("--dataset", required=True)
+    parser.add_argument("--output_cache", "--output-cache", "--output", dest="output_cache", required=True)
+    parser.add_argument("--sam_checkpoint", "--sam-checkpoint", dest="sam_checkpoint")
+    parser.add_argument("--model_type", "--model-type", dest="model_type", default="vit_b")
+    parser.add_argument("--device", default="cpu")
+    parser.add_argument("--image_size", "--image-size", dest="image_size", type=int, default=256)
+    parser.add_argument("--structure_grid_size", "--structure-grid-size", dest="structure_grid_size", type=int, default=32)
+    parser.add_argument("--synthetic", action="store_true", help="Use deterministic synthetic embeddings instead of a real SAM checkpoint.")
     args = parser.parse_args()
-    encoder = SAMStructureEncoder(checkpoint=args.sam_checkpoint)
-    image = torch.zeros(1, 3, 64, 64)
-    embedding = encoder(image)
-    save_structure_cache(args.output, "synthetic", embedding, tensor_hash(image))
-    print("structure cache written")
+
+    if not args.data_path:
+        raise SystemExit("--data_path is required")
+    dataset_root = resolve_dataset_root(args.data_path, args.dataset)
+    validate_dataset_layout(dataset_root)
+    cache_root = Path(args.output_cache)
+    cache_root.mkdir(parents=True, exist_ok=True)
+    encoder = SAMStructureEncoder(
+        checkpoint=None if args.synthetic else args.sam_checkpoint,
+        model_type=args.model_type,
+        device=args.device,
+    )
+    sample_ids = []
+    for split, has_mask in (("labeled", True), ("unlabeled", False)):
+        dataset = SAGEImageDataset(dataset_root, split, num_classes=3, image_size=args.image_size, has_mask=has_mask)
+        for sample in dataset:
+            image = sample["image"].unsqueeze(0).to(args.device)
+            embedding = encoder(image, output_size=(args.structure_grid_size, args.structure_grid_size))
+            save_structure_cache(cache_root, sample["sample_id"], embedding.cpu(), tensor_hash(image.cpu()))
+            sample_ids.append(sample["sample_id"])
+    metadata = {
+        "dataset": args.dataset,
+        "dataset_root": str(dataset_root),
+        "dataset_fingerprint": compute_dataset_fingerprint(dataset_root),
+        "grid_size": args.structure_grid_size,
+        "sample_count": len(sample_ids),
+        "sample_ids": sorted(sample_ids),
+        "uses_real_sam": bool(args.sam_checkpoint and not args.synthetic),
+    }
+    write_cache_manifest(cache_root, metadata)
+    print(json.dumps(metadata, indent=2))
 
 
 if __name__ == "__main__":
