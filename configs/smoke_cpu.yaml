@@ -1,0 +1,11 @@
+seed: 2026
+device: cpu
+in_channels: 3
+num_classes: 3
+image_size: 64
+warmup_iterations: 2
+ssl_iterations: 2
+structure_weight: 0.1
+set_weight: 0.5
+relational_weight: 0.05
+learning_rate: 0.001

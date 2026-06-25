@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sage-sam"
+version = "0.1.0"
+description = "Standalone SAGE-SAM semi-supervised ultrasound segmentation framework."
+requires-python = ">=3.8"
+dependencies = [
+  "numpy",
+  "torch",
+  "Pillow",
+  "PyYAML",
+]
+
+[tool.setuptools]
+py-modules = ["train_sage_sam", "prediction_sage_sam"]
+packages = ["Model", "dataloader", "sage_ssl", "engine", "utils", "tools"]

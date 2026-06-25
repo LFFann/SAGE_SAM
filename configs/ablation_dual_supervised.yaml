@@ -1,0 +1,4 @@
+inherits: sage_sam_3class.yaml
+use_set_supervision: false
+use_structure_loss: false
+use_adaptive_augmentation: false
