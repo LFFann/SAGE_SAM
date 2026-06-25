@@ -11,6 +11,12 @@ set -euo pipefail
 PYTHON_BIN="${PYTHON_BIN:-python}"
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 DEVICE="${DEVICE:-cuda}"
+if [[ -z "${OMP_NUM_THREADS:-}" || ! "${OMP_NUM_THREADS}" =~ ^[0-9]+$ ]]; then
+  OMP_NUM_THREADS=4
+fi
+if [[ -z "${MKL_NUM_THREADS:-}" || ! "${MKL_NUM_THREADS}" =~ ^[0-9]+$ ]]; then
+  MKL_NUM_THREADS="${OMP_NUM_THREADS}"
+fi
 
 DATA_PATH="${DATA_PATH:-./SampleData}"
 DATASET="${DATASET:-260513_data_multiclass}"
@@ -19,12 +25,18 @@ OUTPUT_CACHE="${OUTPUT_CACHE:-./structure_cache/${DATASET}}"
 SAM_CHECKPOINT="${SAM_CHECKPOINT:-./sam_vit_b_01ec64.pth}"
 MODEL_TYPE="${MODEL_TYPE:-vit_b}"
 IMAGE_SIZE="${IMAGE_SIZE:-256}"
+NUM_CLASSES="${NUM_CLASSES:-3}"
+IN_CHANNELS="${IN_CHANNELS:-3}"
+POINT_NUMS="${POINT_NUMS:-5}"
+BOX_NUMS="${BOX_NUMS:-1}"
 STRUCTURE_GRID_SIZE="${STRUCTURE_GRID_SIZE:-32}"
 
 # Set SYNTHETIC=1 only for code smoke tests. Formal training should use a real SAM checkpoint.
 SYNTHETIC="${SYNTHETIC:-0}"
 
 export CUDA_VISIBLE_DEVICES
+export OMP_NUM_THREADS
+export MKL_NUM_THREADS
 
 cmd=(
   "${PYTHON_BIN}" tools/precompute_sam_structure.py
@@ -34,6 +46,10 @@ cmd=(
   --model_type "${MODEL_TYPE}"
   --device "${DEVICE}"
   --image_size "${IMAGE_SIZE}"
+  --num_classes "${NUM_CLASSES}"
+  --in_channels "${IN_CHANNELS}"
+  --point_nums "${POINT_NUMS}"
+  --box_nums "${BOX_NUMS}"
   --structure_grid_size "${STRUCTURE_GRID_SIZE}"
 )
 
@@ -54,7 +70,10 @@ echo "  OUTPUT_CACHE=${OUTPUT_CACHE}"
 echo "  SAM_CHECKPOINT=${SAM_CHECKPOINT}"
 echo "  MODEL_TYPE=${MODEL_TYPE}"
 echo "  IMAGE_SIZE=${IMAGE_SIZE}"
+echo "  NUM_CLASSES=${NUM_CLASSES}"
+echo "  IN_CHANNELS=${IN_CHANNELS}"
 echo "  STRUCTURE_GRID_SIZE=${STRUCTURE_GRID_SIZE}"
+echo "  OMP_NUM_THREADS=${OMP_NUM_THREADS}"
 echo
 printf 'Command:'
 printf ' %q' "${cmd[@]}"

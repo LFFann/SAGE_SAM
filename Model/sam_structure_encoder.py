@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from pathlib import Path
 
 import torch
@@ -17,11 +18,28 @@ class SAMStructureEncoder(nn.Module):
     for CPU smoke tests.
     """
 
-    def __init__(self, checkpoint: str | None = None, model_type: str = "vit_b", device: str | torch.device = "cpu"):
+    def __init__(
+        self,
+        checkpoint: str | None = None,
+        model_type: str = "vit_b",
+        device: str | torch.device = "cpu",
+        image_size: int = 256,
+        in_channels: int = 3,
+        num_classes: int = 3,
+        point_nums: int = 5,
+        box_nums: int = 1,
+    ):
         super().__init__()
         self.checkpoint = checkpoint
         self.model_type = model_type
         self.device = torch.device(device)
+        self.sam_args = SimpleNamespace(
+            image_size=int(image_size),
+            in_channels=int(in_channels),
+            num_classes=int(num_classes),
+            point_nums=int(point_nums),
+            box_nums=int(box_nums),
+        )
         self.sam = None
         self.image_encoder = None
         if checkpoint:
@@ -33,7 +51,7 @@ class SAMStructureEncoder(nn.Module):
             raise FileNotFoundError(f"SAM checkpoint not found: {checkpoint}")
         from Model.sam import sam_model_registry
 
-        sam = sam_model_registry[self.model_type](checkpoint=str(path))
+        sam = sam_model_registry[self.model_type](self.sam_args, checkpoint=str(path))
         sam.eval().to(self.device)
         for parameter in sam.parameters():
             parameter.requires_grad_(False)

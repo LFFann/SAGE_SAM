@@ -15,6 +15,12 @@ DEVICE="${DEVICE:-cuda}"
 USE_AMP="${USE_AMP:-1}"
 SEED="${SEED:-2026}"
 NUM_WORKERS="${NUM_WORKERS:-4}"
+if [[ -z "${OMP_NUM_THREADS:-}" || ! "${OMP_NUM_THREADS}" =~ ^[0-9]+$ ]]; then
+  OMP_NUM_THREADS=4
+fi
+if [[ -z "${MKL_NUM_THREADS:-}" || ! "${MKL_NUM_THREADS}" =~ ^[0-9]+$ ]]; then
+  MKL_NUM_THREADS="${OMP_NUM_THREADS}"
+fi
 
 # Dataset
 DATA_PATH="${DATA_PATH:-./SampleData}"
@@ -67,6 +73,8 @@ DRY_RUN="${DRY_RUN:-0}"
 ABLATION_SUPERVISED_ONLY="${ABLATION_SUPERVISED_ONLY:-0}"
 
 export CUDA_VISIBLE_DEVICES
+export OMP_NUM_THREADS
+export MKL_NUM_THREADS
 
 cmd=(
   "${PYTHON_BIN}" train_sage_sam.py
@@ -152,6 +160,7 @@ echo "  MAX_ITERATIONS=${MAX_ITERATIONS}"
 echo "  WARMUP_ITERATIONS=${WARMUP_ITERATIONS}"
 echo "  LABELED_BATCH_SIZE=${LABELED_BATCH_SIZE}"
 echo "  UNLABELED_BATCH_SIZE=${UNLABELED_BATCH_SIZE}"
+echo "  OMP_NUM_THREADS=${OMP_NUM_THREADS}"
 echo
 printf 'Command:'
 printf ' %q' "${cmd[@]}"

@@ -28,6 +28,10 @@ def main() -> None:
     parser.add_argument("--model_type", "--model-type", dest="model_type", default="vit_b")
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--image_size", "--image-size", dest="image_size", type=int, default=256)
+    parser.add_argument("--num_classes", "--num-classes", dest="num_classes", type=int, default=3)
+    parser.add_argument("--in_channels", "--in-channels", dest="in_channels", type=int, default=3)
+    parser.add_argument("--point_nums", "--point-nums", dest="point_nums", type=int, default=5)
+    parser.add_argument("--box_nums", "--box-nums", dest="box_nums", type=int, default=1)
     parser.add_argument("--structure_grid_size", "--structure-grid-size", dest="structure_grid_size", type=int, default=32)
     parser.add_argument("--synthetic", action="store_true", help="Use deterministic synthetic embeddings instead of a real SAM checkpoint.")
     args = parser.parse_args()
@@ -42,10 +46,22 @@ def main() -> None:
         checkpoint=None if args.synthetic else args.sam_checkpoint,
         model_type=args.model_type,
         device=args.device,
+        image_size=args.image_size,
+        in_channels=args.in_channels,
+        num_classes=args.num_classes,
+        point_nums=args.point_nums,
+        box_nums=args.box_nums,
     )
     sample_ids = []
     for split, has_mask in (("labeled", True), ("unlabeled", False)):
-        dataset = SAGEImageDataset(dataset_root, split, num_classes=3, image_size=args.image_size, has_mask=has_mask)
+        dataset = SAGEImageDataset(
+            dataset_root,
+            split,
+            num_classes=args.num_classes,
+            image_size=args.image_size,
+            has_mask=has_mask,
+            in_channels=args.in_channels,
+        )
         for sample in dataset:
             image = sample["image"].unsqueeze(0).to(args.device)
             embedding = encoder(image, output_size=(args.structure_grid_size, args.structure_grid_size))
