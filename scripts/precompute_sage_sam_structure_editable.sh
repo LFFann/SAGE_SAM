@@ -11,10 +11,10 @@ set -euo pipefail
 PYTHON_BIN="${PYTHON_BIN:-python}"
 CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 DEVICE="${DEVICE:-cuda}"
-if [[ -z "${OMP_NUM_THREADS:-}" || ! "${OMP_NUM_THREADS}" =~ ^[0-9]+$ ]]; then
+if [[ -z "${OMP_NUM_THREADS:-}" || ! "${OMP_NUM_THREADS}" =~ ^[1-9][0-9]*$ ]]; then
   OMP_NUM_THREADS=4
 fi
-if [[ -z "${MKL_NUM_THREADS:-}" || ! "${MKL_NUM_THREADS}" =~ ^[0-9]+$ ]]; then
+if [[ -z "${MKL_NUM_THREADS:-}" || ! "${MKL_NUM_THREADS}" =~ ^[1-9][0-9]*$ ]]; then
   MKL_NUM_THREADS="${OMP_NUM_THREADS}"
 fi
 
@@ -29,6 +29,9 @@ NUM_CLASSES="${NUM_CLASSES:-3}"
 IN_CHANNELS="${IN_CHANNELS:-3}"
 POINT_NUMS="${POINT_NUMS:-5}"
 BOX_NUMS="${BOX_NUMS:-1}"
+MOD="${MOD:-seg}"
+THD="${THD:-0}"
+CHUNK="${CHUNK:-1}"
 STRUCTURE_GRID_SIZE="${STRUCTURE_GRID_SIZE:-32}"
 
 # Set SYNTHETIC=1 only for code smoke tests. Formal training should use a real SAM checkpoint.
@@ -50,8 +53,14 @@ cmd=(
   --in_channels "${IN_CHANNELS}"
   --point_nums "${POINT_NUMS}"
   --box_nums "${BOX_NUMS}"
+  --mod "${MOD}"
+  --chunk "${CHUNK}"
   --structure_grid_size "${STRUCTURE_GRID_SIZE}"
 )
+
+if [[ "${THD}" == "1" ]]; then
+  cmd+=(--thd)
+fi
 
 if [[ "${SYNTHETIC}" == "1" ]]; then
   cmd+=(--synthetic)
@@ -72,6 +81,7 @@ echo "  MODEL_TYPE=${MODEL_TYPE}"
 echo "  IMAGE_SIZE=${IMAGE_SIZE}"
 echo "  NUM_CLASSES=${NUM_CLASSES}"
 echo "  IN_CHANNELS=${IN_CHANNELS}"
+echo "  MOD=${MOD}"
 echo "  STRUCTURE_GRID_SIZE=${STRUCTURE_GRID_SIZE}"
 echo "  OMP_NUM_THREADS=${OMP_NUM_THREADS}"
 echo

@@ -15,10 +15,10 @@ DEVICE="${DEVICE:-cuda}"
 USE_AMP="${USE_AMP:-1}"
 SEED="${SEED:-2026}"
 NUM_WORKERS="${NUM_WORKERS:-4}"
-if [[ -z "${OMP_NUM_THREADS:-}" || ! "${OMP_NUM_THREADS}" =~ ^[0-9]+$ ]]; then
+if [[ -z "${OMP_NUM_THREADS:-}" || ! "${OMP_NUM_THREADS}" =~ ^[1-9][0-9]*$ ]]; then
   OMP_NUM_THREADS=4
 fi
-if [[ -z "${MKL_NUM_THREADS:-}" || ! "${MKL_NUM_THREADS}" =~ ^[0-9]+$ ]]; then
+if [[ -z "${MKL_NUM_THREADS:-}" || ! "${MKL_NUM_THREADS}" =~ ^[1-9][0-9]*$ ]]; then
   MKL_NUM_THREADS="${OMP_NUM_THREADS}"
 fi
 

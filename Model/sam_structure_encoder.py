@@ -28,6 +28,9 @@ class SAMStructureEncoder(nn.Module):
         num_classes: int = 3,
         point_nums: int = 5,
         box_nums: int = 1,
+        mod: str = "seg",
+        thd: bool = False,
+        chunk: int = 1,
     ):
         super().__init__()
         self.checkpoint = checkpoint
@@ -39,6 +42,10 @@ class SAMStructureEncoder(nn.Module):
             num_classes=int(num_classes),
             point_nums=int(point_nums),
             box_nums=int(box_nums),
+            mod=mod,
+            thd=bool(thd),
+            chunk=int(chunk),
+            encoder_adapter=False,
         )
         self.sam = None
         self.image_encoder = None

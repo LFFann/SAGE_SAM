@@ -32,6 +32,9 @@ def main() -> None:
     parser.add_argument("--in_channels", "--in-channels", dest="in_channels", type=int, default=3)
     parser.add_argument("--point_nums", "--point-nums", dest="point_nums", type=int, default=5)
     parser.add_argument("--box_nums", "--box-nums", dest="box_nums", type=int, default=1)
+    parser.add_argument("--mod", default="seg")
+    parser.add_argument("--thd", action="store_true")
+    parser.add_argument("--chunk", type=int, default=1)
     parser.add_argument("--structure_grid_size", "--structure-grid-size", dest="structure_grid_size", type=int, default=32)
     parser.add_argument("--synthetic", action="store_true", help="Use deterministic synthetic embeddings instead of a real SAM checkpoint.")
     args = parser.parse_args()
@@ -51,6 +54,9 @@ def main() -> None:
         num_classes=args.num_classes,
         point_nums=args.point_nums,
         box_nums=args.box_nums,
+        mod=args.mod,
+        thd=args.thd,
+        chunk=args.chunk,
     )
     sample_ids = []
     for split, has_mask in (("labeled", True), ("unlabeled", False)):
