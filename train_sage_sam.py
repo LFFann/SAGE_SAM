@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import shutil
 import subprocess
 import sys
 import time
@@ -107,15 +108,22 @@ class TerminalProgress:
         self.stream = stream or sys.stdout
         self.last_len = 0
 
+    def _fit(self, message: str) -> str:
+        width = shutil.get_terminal_size((100, 20)).columns
+        width = max(min(width, 140), 60) - 1
+        if len(message) <= width:
+            return message
+        return message[: max(width - 3, 1)] + "..."
+
     def update(self, message: str) -> None:
-        padding = max(self.last_len - len(message), 0)
-        self.stream.write("\r" + message + (" " * padding))
+        message = self._fit(message)
+        self.stream.write("\r\033[2K" + message)
         self.stream.flush()
         self.last_len = len(message)
 
     def write(self, message: str = "") -> None:
         if self.last_len:
-            self.stream.write("\r" + (" " * self.last_len) + "\r")
+            self.stream.write("\r\033[2K")
             self.last_len = 0
         if message:
             self.stream.write(message + "\n")
@@ -135,7 +143,7 @@ def format_seconds(seconds: float) -> str:
     return f"{seconds:d}s"
 
 
-def progress_bar(completed: int, total: int, width: int = 28) -> str:
+def progress_bar(completed: int, total: int, width: int = 18) -> str:
     total = max(total, 1)
     filled = min(width, max(0, round(width * completed / total)))
     return "[" + ("#" * filled) + ("-" * (width - filled)) + "]"
@@ -171,13 +179,13 @@ def format_progress_status(
         val_text = format_metric(last_metrics.get("fused_avg_dice"))
         iou_text = format_metric(last_metrics.get("fused_avg_iou"))
         hd95_text = format_metric(last_metrics.get("fused_avg_hd95"))
-    status = "validating" if validating else record["stage"]
+    stage = "val" if validating else ("warm" if record["stage"] == "warmup" else record["stage"])
+    ssl_loss = float(record["loss_set"]) + 0.1 * float(record["loss_structure"])
     return (
-        f"{progress_bar(completed, total)} {iteration + 1}/{max_iterations} {percent:5.1f}% "
-        f"{status} loss={record['loss_total']:.5f} "
-        f"sup={record['loss_sup']:.5f} set={record['loss_set']:.5f} "
-        f"struct={record['loss_structure']:.5f} val_dice={val_text} "
-        f"val_iou={iou_text} val_hd95={hd95_text} best={best_text} "
+        f"{progress_bar(completed, total)} {iteration + 1}/{max_iterations} {percent:4.1f}% "
+        f"{stage} loss={record['loss_total']:.4f} "
+        f"sup={record['loss_sup']:.4f} ssl={ssl_loss:.4f} "
+        f"val={val_text} iou={iou_text} h={hd95_text} best={best_text} "
         f"eta={format_seconds(eta)}"
     )
 
